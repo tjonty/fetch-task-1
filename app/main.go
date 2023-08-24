@@ -16,9 +16,10 @@ import (
 
 // Store receipt IDs and points
 var receipts = make(map[string]int)
+var pointsData = make(map[string]int)
 
-// ReceiptData represents the structure of the JSON receipt data
-type ReceiptData struct {
+// Receipt represents the structure of the JSON receipt data
+type Receipt struct {
 	Retailer     string `json:"retailer"`
 	PurchaseDate string `json:"purchaseDate"`
 	PurchaseTime string `json:"purchaseTime"`
@@ -31,8 +32,11 @@ type Item struct {
 	ShortDescription string `json:"shortDescription"`
 	Price            string `json:"price"`
 }
+type PointsResponse struct {
+	Points int `json:"points"`
+}
 
-func calculatePoints(receipt ReceiptData) int {
+func generateIdAndPoints(receipt Receipt) (string, int, error) {
 	points := 0
 
 	// Rule: One point for every alphanumeric character in the retailer name
@@ -66,19 +70,31 @@ func calculatePoints(receipt ReceiptData) int {
 	}
 
 	// Rule: 6 points if the day in the purchase date is odd
-	purchaseDate, _ := time.Parse("2006-01-02", receipt.PurchaseDate)
-	if purchaseDate.Day()%2 != 0 {
-		points += 6
-	}
-
 	// Rule: 10 points if the time of purchase is after 2:00pm and before 4:00pm
-	purchaseTime, _ := time.Parse("15:04", receipt.PurchaseTime)
-	if purchaseTime.After(time.Date(0, 1, 1, 14, 0, 0, 0, time.UTC)) &&
-		purchaseTime.Before(time.Date(0, 1, 1, 16, 0, 0, 0, time.UTC)) {
-		points += 10
+	purchaseDate, err := time.Parse("2006-01-02", receipt.PurchaseDate)
+	if err != nil {
+		return "", points, fmt.Errorf("Invalid purchase date")
+	} else {
+		if purchaseDate.Day()%2 != 0 {
+			points += 6
+		}
+
+		purchaseTime, err := time.Parse("15:04", receipt.PurchaseTime)
+		if err != nil {
+			return "", points, fmt.Errorf("Invalid purchase time")
+		} else {
+			if purchaseTime.After(time.Date(0, 1, 1, 14, 0, 0, 0, time.UTC)) &&
+				purchaseTime.Before(time.Date(0, 1, 1, 16, 0, 0, 0, time.UTC)) {
+				points += 10
+			}
+		}
 	}
 
-	return points
+	// Use a UUID library to generate IDs
+	id := uuid.New().String()
+	pointsData[id] = points
+
+	return id, points, nil
 }
 
 // parseFloat is a helper function to convert string to float64
@@ -98,42 +114,35 @@ func setupRouter() *mux.Router {
 }
 
 func processReceiptHandler(w http.ResponseWriter, r *http.Request) {
-	var receiptData ReceiptData
-	if err := json.NewDecoder(r.Body).Decode(&receiptData); err != nil {
-		http.Error(w, "Invalid JSON data", http.StatusBadRequest)
+
+	var receipt Receipt
+	if err := json.NewDecoder(r.Body).Decode(&receipt); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 		return
 	}
 
-	points := calculatePoints(receiptData)
-
-	// Use a UUID library to generate IDs
-	id := uuid.New()
-	receiptID := id.String()
-	response := map[string]interface{}{
-		"id": receiptID,
+	id, _, err := generateIdAndPoints(receipt)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 
-	// Store the receipt and points in memory
-	receipts[receiptID] = points
-
+	response := map[string]string{"id": id}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
 
 func getPointsHandler(w http.ResponseWriter, r *http.Request) {
 	params := mux.Vars(r)
-	receiptID := params["id"]
+	id := params["id"]
 
-	points, found := receipts[receiptID]
+	points, found := pointsData[id]
 	if !found {
-		http.Error(w, "Receipt not found", http.StatusNotFound)
+		http.NotFound(w, r)
 		return
 	}
 
-	response := map[string]interface{}{
-		"points": points,
-	}
-
+	response := PointsResponse{Points: points}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
