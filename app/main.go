@@ -2,15 +2,16 @@ package main
 
 import (
 	"encoding/json"
-    "log"
-    "net/http"
 	"fmt"
+	"log"
 	"math"
+	"net/http"
+	"regexp"
 	"strings"
 	"time"
-	"regexp"
-    "github.com/gorilla/mux"
+
 	"github.com/google/uuid"
+	"github.com/gorilla/mux"
 )
 
 // Store receipt IDs and points
@@ -18,11 +19,11 @@ var receipts = make(map[string]int)
 
 // ReceiptData represents the structure of the JSON receipt data
 type ReceiptData struct {
-	Retailer      string  `json:"retailer"`
-	PurchaseDate  string  `json:"purchaseDate"`
-	PurchaseTime  string  `json:"purchaseTime"`
-	Items         []Item  `json:"items"`
-	Total         string  `json:"total"`
+	Retailer     string `json:"retailer"`
+	PurchaseDate string `json:"purchaseDate"`
+	PurchaseTime string `json:"purchaseTime"`
+	Items        []Item `json:"items"`
+	Total        string `json:"total"`
 }
 
 // Item represents the structure of an item in the receipt
@@ -90,56 +91,56 @@ func parseFloat(s string) float64 {
 // ---------- router ----------
 
 func setupRouter() *mux.Router {
-    router := mux.NewRouter()
-    router.HandleFunc("/receipts/process", processReceiptHandler).Methods("POST")
-    router.HandleFunc("/receipts/{id}/points", getPointsHandler).Methods("GET")
-    return router
+	router := mux.NewRouter()
+	router.HandleFunc("/receipts/process", processReceiptHandler).Methods("POST")
+	router.HandleFunc("/receipts/{id}/points", getPointsHandler).Methods("GET")
+	return router
 }
 
 func processReceiptHandler(w http.ResponseWriter, r *http.Request) {
-    var receiptData ReceiptData
-    if err := json.NewDecoder(r.Body).Decode(&receiptData); err != nil {
-        http.Error(w, "Invalid JSON data", http.StatusBadRequest)
-        return
-    }
+	var receiptData ReceiptData
+	if err := json.NewDecoder(r.Body).Decode(&receiptData); err != nil {
+		http.Error(w, "Invalid JSON data", http.StatusBadRequest)
+		return
+	}
 
-    points := calculatePoints(receiptData)
+	points := calculatePoints(receiptData)
 
-    id := uuid.New()
-    receiptID := id.String() // You can use a UUID library to generate IDs
-    response := map[string]interface{}{
-        "id": receiptID,
-    }
+	// Use a UUID library to generate IDs
+	id := uuid.New()
+	receiptID := id.String()
+	response := map[string]interface{}{
+		"id": receiptID,
+	}
 
-    // Store the receipt and points in memory (e.g., a map)
-    // For the purpose of this example, let's assume you have a global variable called 'receipts'
-    receipts[receiptID] = points
+	// Store the receipt and points in memory
+	receipts[receiptID] = points
 
-    w.Header().Set("Content-Type", "application/json")
-    json.NewEncoder(w).Encode(response)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
 }
 
 func getPointsHandler(w http.ResponseWriter, r *http.Request) {
-    params := mux.Vars(r)
-    receiptID := params["id"]
+	params := mux.Vars(r)
+	receiptID := params["id"]
 
-    points, found := receipts[receiptID]
-    if !found {
-        http.Error(w, "Receipt not found", http.StatusNotFound)
-        return
-    }
+	points, found := receipts[receiptID]
+	if !found {
+		http.Error(w, "Receipt not found", http.StatusNotFound)
+		return
+	}
 
-    response := map[string]interface{}{
-        "points": points,
-    }
+	response := map[string]interface{}{
+		"points": points,
+	}
 
-    w.Header().Set("Content-Type", "application/json")
-    json.NewEncoder(w).Encode(response)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
 }
 
 // ---------- main ----------
 
 func main() {
-    router := setupRouter()
-    log.Fatal(http.ListenAndServe(":8080", router))
+	router := setupRouter()
+	log.Fatal(http.ListenAndServe(":8080", router))
 }
